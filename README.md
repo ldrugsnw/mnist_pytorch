@@ -6,7 +6,7 @@ PyTorch CNN으로 MNIST 손글씨 인식 모델을 학습하고, Flask 웹앱으
 ## 주요 시행착오와 해결 과정
 
 ### 1. 치명적인 색상 반전 버그 🚨
-**문제**: 모델이 항상 0만 예측  
+**문제**: 모델의 실제 예측값이 너무 터무니 없었음  
 **원인**: 
 ```python
 # 🚨 문제의 코드
@@ -17,9 +17,75 @@ image_array = 255 - image_array  # 불필요한 색상 반전!
 
 **해결**: 색상 반전 제거로 즉시 해결
 
+**결론**: 모델을 단순하게도 학습시켜보고, early stopping도 해봤는데 결국 이 단계에서 문제가 있었다니 사소한 fault에서 큰 오류가 나왔네요!
+
 ### 2. 오버피팅의 무서움
-- MNIST에서 99.19% 정확도에도 실제 손글씨에서 실패
-- **교훈**: Test accuracy만으로는 실제 성능을 보장할 수 없음
+**문제**: MNIST에서 99.19% 정확도에도 실제 손글씨에서 실패
+**원인**: 
+- 머신러닝 관련 책에서는 그렇게 죽어라 읽어도 와닿지 않았던 내용인데, 실제로 간단한 데이터셋에서 학습을 해보니 많이 와닿았습니다.
+- 모델을 단순하게도 학습시켜보고, early stopping도 해봤는데 결국 전처리 단계에서 문제가 있었다니 사소한 fault에서 큰 오류가 나왔네요!
+
+**더 복잡한 모델도 시도해봤지만...**
+```python
+class ImprovedCNN(nn.Module):
+    def __init__(self):
+        super(ImprovedCNN, self).__init__()
+        # 첫 번째 블록
+        self.conv1 = nn.Conv2d(1, 32, 3, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.conv2 = nn.Conv2d(32, 32, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(32)
+        
+        # 두 번째 블록
+        self.conv3 = nn.Conv2d(32, 64, 3, padding=1)
+        self.bn3 = nn.BatchNorm2d(64)
+        self.conv4 = nn.Conv2d(64, 64, 3, padding=1)
+        self.bn4 = nn.BatchNorm2d(64)
+        
+        # 세 번째 블록
+        self.conv5 = nn.Conv2d(64, 128, 3, padding=1)
+        self.bn5 = nn.BatchNorm2d(128)
+        
+        self.pool = nn.MaxPool2d(2, 2)
+        self.dropout = nn.Dropout(0.5)
+        self.dropout_conv = nn.Dropout2d(0.25)
+        
+        # Fully connected layers
+        self.fc1 = nn.Linear(128 * 3 * 3, 512)
+        self.fc2 = nn.Linear(512, 128)
+        self.fc3 = nn.Linear(128, 10)
+        
+    def forward(self, x):
+        # 첫 번째 블록: 28x28 -> 14x14
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = self.pool(x)
+        x = self.dropout_conv(x)
+        
+        # 두 번째 블록: 14x14 -> 7x7
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = F.relu(self.bn4(self.conv4(x)))
+        x = self.pool(x)
+        x = self.dropout_conv(x)
+        
+        # 세 번째 블록: 7x7 -> 3x3
+        x = F.relu(self.bn5(self.conv5(x)))
+        x = F.adaptive_avg_pool2d(x, (3, 3))
+        
+        # Flatten
+        x = torch.flatten(x, 1)
+        
+        # Fully connected
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = F.relu(self.fc2(x))
+        x = self.dropout(x)
+        x = self.fc3(x)
+        
+        return x
+```
+
+**교훈**: Test accuracy만으로는 실제 성능을 보장할 수 없음
 
 ### 3. 체계적 디버깅의 중요성
 **적용한 디버깅 전략:**
