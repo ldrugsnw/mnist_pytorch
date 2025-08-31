@@ -26,6 +26,7 @@ image_array = 255 - image_array  # 불필요한 색상 반전!
 - 모델을 단순하게도 학습시켜보고, early stopping도 해봤는데 결국 전처리 단계에서 문제가 있었다니 사소한 fault에서 큰 오류가 나왔네요!
 
 **더 복잡한 모델도 시도해봤지만...**
+mnist는 이 정도의 깊이를 가진 모델은 필요가 없다고 하네요 .. 😭
 ```python
 class ImprovedCNN(nn.Module):
     def __init__(self):
