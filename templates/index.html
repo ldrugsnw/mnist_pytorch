@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MNIST 숫자 인식기</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        
+        .canvas-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        #drawingCanvas {
+            border: 3px solid #ddd;
+            border-radius: 8px;
+            cursor: crosshair;
+            background-color: #000;
+        }
+        
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 0 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        .clear-btn {
+            background-color: #f44336;
+        }
+        
+        .clear-btn:hover {
+            background-color: #da190b;
+        }
+        
+        .result {
+            background-color: #e8f5e8;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        
+        .prediction {
+            font-size: 48px;
+            font-weight: bold;
+            color: #2196F3;
+            margin: 10px 0;
+        }
+        
+        .confidence {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 15px;
+        }
+        
+        .probabilities {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .prob-item {
+            background: #f0f0f0;
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .prob-item.max {
+            background: #2196F3;
+            color: white;
+        }
+        
+        .instructions {
+            background-color: #fff3cd;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ffc107;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 MNIST 숫자 인식기</h1>
+        
+        <div class="instructions">
+            <strong>사용법:</strong> 아래 검은 캔버스에 0~9 사이의 숫자를 그려보세요! 
+            AI가 당신이 그린 숫자를 인식합니다.
+        </div>
+        
+        <div class="canvas-container">
+            <canvas id="drawingCanvas" width="280" height="280"></canvas>
+        </div>
+        
+        <div class="controls">
+            <button onclick="predictDigit()">🔍 숫자 인식하기</button>
+            <button class="clear-btn" onclick="clearCanvas()">🗑️ 지우기</button>
+        </div>
+        
+        <div id="result" class="result" style="display: none;">
+            <h3>예측 결과:</h3>
+            <div class="prediction" id="prediction">-</div>
+            <div class="confidence" id="confidence">신뢰도: -%</div>
+            
+            <h4>모든 숫자별 확률:</h4>
+            <div class="probabilities" id="probabilities"></div>
+        </div>
+    </div>
+
+    <script>
+        // 캔버스 설정
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+
+        // 캔버스 스타일 설정
+        ctx.lineWidth = 12;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'white';
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 마우스 이벤트
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        // 터치 이벤트 (모바일 지원)
+        canvas.addEventListener('touchstart', handleTouch);
+        canvas.addEventListener('touchmove', handleTouch);
+        canvas.addEventListener('touchend', stopDrawing);
+
+        function startDrawing(e) {
+            drawing = true;
+            draw(e);
+        }
+
+        function draw(e) {
+            if (!drawing) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        }
+
+        function stopDrawing() {
+            if (!drawing) return;
+            drawing = false;
+            ctx.beginPath();
+        }
+
+        function handleTouch(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent(e.type === 'touchstart' ? 'mousedown' : 
+                                            e.type === 'touchmove' ? 'mousemove' : 'mouseup', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            canvas.dispatchEvent(mouseEvent);
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('result').style.display = 'none';
+        }
+
+        async function predictDigit() {
+            // 캔버스를 base64로 변환
+            const imageData = canvas.toDataURL('image/png');
+            
+            try {
+                // 서버에 예측 요청
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ image: imageData })
+                });
+
+                if (!response.ok) {
+                    throw new Error('예측 요청 실패');
+                }
+
+                const result = await response.json();
+                
+                // 결과 표시
+                displayResult(result);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                alert('예측 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+
+        function displayResult(result) {
+            document.getElementById('prediction').textContent = result.prediction;
+            document.getElementById('confidence').textContent = 
+                `신뢰도: ${(result.confidence * 100).toFixed(1)}%`;
+            
+            // 모든 확률 표시
+            const probabilitiesDiv = document.getElementById('probabilities');
+            probabilitiesDiv.innerHTML = '';
+            
+            result.probabilities.forEach((prob, index) => {
+                const probItem = document.createElement('div');
+                probItem.className = 'prob-item';
+                if (index === result.prediction) {
+                    probItem.classList.add('max');
+                }
+                probItem.innerHTML = `
+                    <strong>${index}</strong><br>
+                    ${(prob * 100).toFixed(1)}%
+                `;
+                probabilitiesDiv.appendChild(probItem);
+            });
+            
+            document.getElementById('result').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
